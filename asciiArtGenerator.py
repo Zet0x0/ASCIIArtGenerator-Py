@@ -107,7 +107,6 @@ class Main(QDialog):
         layout.addWidget(processButton)
 
         self.setFixedHeight(self.sizeHint().height())
-        self.show()
 
     def hideEvent(self, event: QHideEvent) -> None:
         self.clipboardTempDir.removeRecursively()
