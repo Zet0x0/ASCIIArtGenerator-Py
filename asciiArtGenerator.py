@@ -6,11 +6,40 @@ from PyQt6.QtWidgets import (QHBoxLayout, QVBoxLayout, QLabel, QSpinBox,
                              QPushButton, QFileDialog)
 from PyQt6.QtGui import (QKeySequence, QShortcut, QImageReader, QAction,
                          QImage)
-from PyQt6.QtCore import QFile, Qt
+from PyQt6.QtCore import QFile, Qt, QThread, pyqtSignal
+
+
+class ProcessingThread(QThread):
+    __slots__ = (
+        "asciiCharacters",
+        "image",
+    )
+    onResultReady = pyqtSignal(bytes)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.asciiCharacters, self.image = [
+            "@", "#", "$", "%", "?", "*", "+", ";", ":", ",", "."
+        ], None
+
+    def start(self, image: QImage) -> None:
+        self.image = image
+        super().start()
+
+    def run(self) -> None:
+        self.onResultReady.emit("".join(
+            ("".join(
+                self.asciiCharacters[self.image.pixelColor(x, y).value() // 25]
+                for x in range(self.image.width())) + "\n")
+            for y in range(self.image.height())).encode("UTF-8"))
 
 
 class Main(QDialog):
-    __slots__ = ("image", )
+    __slots__ = (
+        "image",
+        "file",
+    )
 
     def __init__(self) -> None:
         super().__init__()
@@ -38,69 +67,50 @@ class Main(QDialog):
 
             image = QImage(self.image)
 
-            if not keepOriginalDimensionsRadioButton.isChecked():
-                image = image.scaled(
-                    *((image.width() * multiplyBySpinBox.value(),
-                       image.height() * multiplyBySpinBox.value())
-                      if multiplyByRadioButton.isChecked() else
-                      (image.width() // divideBySpinBox.value(),
-                       image.height() // divideBySpinBox.value())
-                      if divideByRadioButton.isChecked() else
-                      (widthSpinBox.value(), heightSpinBox.value())),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation)
+            image = image.scaled(
+                *((image.width() * 2 // divideBySpinBox.value(),
+                   image.height() // divideBySpinBox.value())
+                  if divideByRadioButton.isChecked() else
+                  (image.width() * 2, image.height())
+                  if keepOriginalDimensionsRadioButton.isChecked() else
+                  (widthSpinBox.value() * 2, heightSpinBox.value())),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
 
             file = QFileDialog.getSaveFileName(
                 filter="Plain Text File (*.txt)")[0].strip()
 
             if file:
-                file = QFile(file)
+                self.file = QFile(file)
 
-                if not file.open(QFile.OpenModeFlag.WriteOnly):
+                if not self.file.open(QFile.OpenModeFlag.WriteOnly):
                     QMessageBox.critical(
                         self, "Error",
-                        f"Could not open the file: [{file.error()}] {file.errorString()}"
+                        f"Could not open the file: [{self.file.error()}] {self.file.errorString()}"
                     )
                 else:
-                    file.write("".join(
-                        ("".join(
-                            asciiCharacters[image.pixelColor(x, y).value() //
-                                            25]
-                            for x in range(image.width())) + "\n")
-                        for y in range(image.height())).encode("UTF-8"))
-
-                    if file.error() != QFile.FileError.NoError:
-                        QMessageBox.critical(
-                            self, "Error",
-                            f"Could not write to file: [{file.error()}] {file.errorString()}"
-                        )
-                    else:
-                        file.close()
-                        QMessageBox.information(
-                            self, "Success",
-                            f"Successfully saved to {file.fileName()}")
-
-            self.setDisabled(False)
+                    processingThread.start(image)
+            else:
+                self.setDisabled(False)
 
         self.image, layout, fileLine = None, QVBoxLayout(self), QLineEdit(
             readOnly=True,
             textChanged=lambda text: processButton.setDisabled(not text.strip(
             )))
-        processButton, asciiCharacters, dimensionsGroupBox = QPushButton(
-            "Process", clicked=process, enabled=False), [
-                "@", "#", "$", "%", "?", "*", "+", ";", ":", ",", "."
-            ], QGroupBox("Output dimensions")
-        dimensionsGroupBoxLayout, divideByRadioButton, multiplyByRadioButton = QFormLayout(
-            dimensionsGroupBox), QRadioButton(checked=True), QRadioButton()
+        processButton, self.file, dimensionsGroupBox = QPushButton(
+            "Process", clicked=process,
+            enabled=False), None, QGroupBox("Output dimensions")
+        dimensionsGroupBoxLayout, divideByRadioButton, processingThread = QFormLayout(
+            dimensionsGroupBox), QRadioButton(
+                checked=True), ProcessingThread()
         divideBySpinBox, divideByLayout, keepOriginalDimensionsRadioButton = QSpinBox(
-            minimum=2), QHBoxLayout(), QRadioButton()
+            minimum=2), QHBoxLayout(), QRadioButton("Keep it all as-is")
         customDimensionsGroupBox, customDimensionsRadioButton, heightSpinBox = QGroupBox(
             "Custom dimensions"), QRadioButton(), QSpinBox(minimum=1,
                                                            maximum=999999999)
-        widthSpinBox, customDimensionsGroupBoxLayout, multiplyByLayout = QSpinBox(
-            minimum=1, maximum=999999999), QFormLayout(
-                customDimensionsGroupBox), QHBoxLayout()
-        multiplyBySpinBox = QSpinBox(minimum=2, maximum=999999999)
+        widthSpinBox, customDimensionsGroupBoxLayout = QSpinBox(
+            minimum=1,
+            maximum=999999999), QFormLayout(customDimensionsGroupBox)
 
         fileLine.addAction(
             QAction(app.style().standardIcon(
@@ -111,6 +121,7 @@ class Main(QDialog):
                     toolTip="Browse"),
             QLineEdit.ActionPosition.TrailingPosition)
         QShortcut(QKeySequence("Ctrl+V"), self, activated=fromClipboard)
+        processingThread.onResultReady.connect(self.resultReady)
 
         customDimensionsGroupBoxLayout.addRow("Width: ", widthSpinBox)
         customDimensionsGroupBoxLayout.addRow("Height: ", heightSpinBox)
@@ -120,15 +131,8 @@ class Main(QDialog):
         divideByLayout.addWidget(divideBySpinBox)
         divideByLayout.addStretch(-1)
 
-        multiplyByLayout.addWidget(multiplyByRadioButton)
-        multiplyByLayout.addWidget(QLabel("Multiply by"))
-        multiplyByLayout.addWidget(multiplyBySpinBox)
-        multiplyByLayout.addStretch(-1)
-
-        dimensionsGroupBoxLayout.addRow(multiplyByLayout)
         dimensionsGroupBoxLayout.addRow(divideByLayout)
-        dimensionsGroupBoxLayout.addRow(keepOriginalDimensionsRadioButton,
-                                        QLabel("Keep original dimensions"))
+        dimensionsGroupBoxLayout.addRow(keepOriginalDimensionsRadioButton)
         dimensionsGroupBoxLayout.addRow(customDimensionsRadioButton,
                                         customDimensionsGroupBox)
 
@@ -137,6 +141,22 @@ class Main(QDialog):
         layout.addWidget(processButton)
 
         self.setFixedSize(self.sizeHint())
+
+    def resultReady(self, result: bytes) -> None:
+        self.file.write(result)
+
+        if self.file.error() != QFile.FileError.NoError:
+            QMessageBox.critical(
+                self, "Error",
+                f"Could not write to file: [{self.file.error()}] {self.file.errorString()}"
+            )
+        else:
+            self.file.close()
+            QMessageBox.information(
+                self, "Success",
+                f"Successfully saved to {self.file.fileName()}")
+
+        self.setDisabled(False)
 
 
 app = QApplication([], applicationName="ASCII Art Generator")
