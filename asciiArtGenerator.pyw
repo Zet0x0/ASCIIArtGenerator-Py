@@ -79,10 +79,7 @@ class Main(QDialog):
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation)
 
-            file = QFileDialog.getSaveFileName(
-                filter="Plain Text File (*.txt)")[0].strip()
-
-            if file:
+            if file := QFileDialog.getSaveFileName(filter="Plain Text File (*.txt)")[0].strip():
                 self.file = QFile(file)
 
                 if not self.file.open(QFile.OpenModeFlag.WriteOnly):
