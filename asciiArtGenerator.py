@@ -88,9 +88,9 @@ class Main(QDialog):
                         f"Could not open the file: [{self.file.error()}] {self.file.errorString()}"
                     )
                 else:
-                    processingThread.start(image)
-            else:
-                self.setDisabled(False)
+                    return processingThread.start(image)
+
+            self.setDisabled(False)
 
         self.image, layout, fileLine = None, QVBoxLayout(self), QLineEdit(
             readOnly=True,
