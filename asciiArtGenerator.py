@@ -141,6 +141,7 @@ class Main(QDialog):
         layout.addWidget(processButton)
 
         self.setFixedSize(self.sizeHint())
+        self.show()
 
     def resultReady(self, result: bytes) -> None:
         self.file.write(result)
@@ -161,5 +162,4 @@ class Main(QDialog):
 
 app = QApplication([], applicationName="ASCII Art Generator")
 main = Main()
-main.show()
 app.exec()
