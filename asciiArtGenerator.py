@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QHBoxLayout, QVBoxLayout, QLabel, QSpinBox,
 from PyQt6.QtGui import (QKeySequence, QShortcut, QImageReader, QAction,
                          QImage)
 from PyQt6.QtCore import QFile, Qt, QThread, pyqtSignal
+from typing import Callable
 
 
 class ProcessingThread(QThread):
@@ -16,12 +17,13 @@ class ProcessingThread(QThread):
     )
     onResultReady = pyqtSignal(bytes)
 
-    def __init__(self) -> None:
+    def __init__(self, onResultReady: Callable) -> None:
         super().__init__()
 
         self.asciiCharacters, self.image = [
             "@", "#", "$", "%", "?", "*", "+", ";", ":", ",", "."
         ], None
+        self.onResultReady.connect(onResultReady)
 
     def start(self, image: QImage) -> None:
         self.image = image
@@ -101,8 +103,8 @@ class Main(QDialog):
             "Process", clicked=process,
             enabled=False), None, QGroupBox("Output dimensions")
         dimensionsGroupBoxLayout, divideByRadioButton, processingThread = QFormLayout(
-            dimensionsGroupBox), QRadioButton(
-                checked=True), ProcessingThread()
+            dimensionsGroupBox), QRadioButton(checked=True), ProcessingThread(
+                self.resultReady)
         divideBySpinBox, divideByLayout, keepOriginalDimensionsRadioButton = QSpinBox(
             minimum=2), QHBoxLayout(), QRadioButton("Keep it all as-is")
         customDimensionsGroupBox, customDimensionsRadioButton, heightSpinBox = QGroupBox(
@@ -121,7 +123,6 @@ class Main(QDialog):
                     toolTip="Browse"),
             QLineEdit.ActionPosition.TrailingPosition)
         QShortcut(QKeySequence("Ctrl+V"), self, activated=fromClipboard)
-        processingThread.onResultReady.connect(self.resultReady)
 
         customDimensionsGroupBoxLayout.addRow("Width: ", widthSpinBox)
         customDimensionsGroupBoxLayout.addRow("Height: ", heightSpinBox)
