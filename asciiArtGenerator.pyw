@@ -41,8 +41,8 @@ class ProcessingThread(QThread):
 
 class MainWindow(QDialog):
     __slots__ = (
-        "background",
-        "foreground",
+        "backgroundColor",
+        "foregroundColor",
         "image",
     )
 
@@ -51,7 +51,8 @@ class MainWindow(QDialog):
 
         def changeColor(forBackground: bool = False) -> None:
             color = QColorDialog.getColor(
-                (self.background if forBackground else self.foreground),
+                (self.backgroundColor
+                 if forBackground else self.foregroundColor),
                 title=
                 f"Select {'Background' if forBackground else 'Foreground'}",
                 options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
@@ -64,11 +65,11 @@ class MainWindow(QDialog):
                 f"QLabel {{ color: transparent; background-color: rgba{color.getRgb()}; }}"
             )
 
-            if forBackground: self.background = color
-            else: self.foreground = color
+            if forBackground: self.backgroundColor = color
+            else: self.foregroundColor = color
 
             generatedArtWindow.setStyleSheet(
-                f"QPlainTextEdit {{ background-color: rgba{self.background.getRgb()}; color: rgba{self.foreground.getRgb()}; border: none; }}"
+                f"QPlainTextEdit {{ background-color: rgba{self.backgroundColor.getRgb()}; color: rgba{self.foregroundColor.getRgb()}; border: none; }}"
             )
 
         def resultReady(result: str) -> None:
@@ -115,7 +116,7 @@ class MainWindow(QDialog):
             readOnly=True,
             textChanged=lambda text: processButton.setDisabled(not text.strip(
             )))
-        processButton, self.foreground, dimensionsGroupBox = QPushButton(
+        processButton, self.foregroundColor, dimensionsGroupBox = QPushButton(
             "Process", clicked=process,
             enabled=False), QColor(0, 0, 0), QGroupBox("Output dimensions")
         dimensionsGroupBoxLayout, divideByRadioButton, processingThread = QFormLayout(
@@ -133,7 +134,7 @@ class MainWindow(QDialog):
                 frameShape=QLabel.Shape.StyledPanel,
                 styleSheet=
                 "QLabel { color: transparent; background-color: #FFFFFF; }")
-        foregroundColorPicker, self.background = QLabel(
+        foregroundColorPicker, self.backgroundColor = QLabel(
             toolTip="Text color",
             frameShape=QLabel.Shape.StyledPanel,
             styleSheet=
@@ -243,9 +244,9 @@ def saveGeneratedArt() -> None:
         0, generatedArtWindow.toPlainText()))
     painter = QPainter(pixmap)
 
-    painter.fillRect(pixmap.rect(), mainWindow.background)
+    painter.fillRect(pixmap.rect(), mainWindow.backgroundColor)
     painter.setFont(generatedArtWindow.font())
-    painter.setPen(mainWindow.foreground)
+    painter.setPen(mainWindow.foregroundColor)
 
     painter.drawText(pixmap.rect(), 0, generatedArtWindow.toPlainText())
 
