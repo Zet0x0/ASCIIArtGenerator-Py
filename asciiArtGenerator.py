@@ -13,36 +13,64 @@ from typing import Callable
 
 class ProcessingThread(QThread):
     __slots__ = (
+        "useOriginalImage",
         "asciiCharacters",
+        "originalImage",
         "image",
     )
     onResultReady = pyqtSignal(str)
 
-    def __init__(self, onResultReady: Callable) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
-        self.asciiCharacters, self.image = [
+        self.useOriginalImage, self.asciiCharacters, self.originalImage = False, [
             "@", "#", "$", "%", "?", "*", "+", ";", ":", ",", " "
         ], None
+        self.image = None
+
+    def start(self,
+              onResultReady: Callable,
+              image: QImage,
+              useOriginalImage: bool = False) -> None:
+        try:
+            self.onResultReady.disconnect()
+        except TypeError:
+            pass
+
         self.onResultReady.connect(onResultReady)
 
-    def start(self, image: QImage) -> None:
-        self.image = image
+        self.image, self.useOriginalImage, self.originalImage = image.scaled(
+            *((image.width() * 2 // mainWindow.divideBySpinBox.value(),
+               image.height() // mainWindow.divideBySpinBox.value())
+              if mainWindow.divideByRadioButton.isChecked() else
+              (image.width() * 2, image.height())
+              if mainWindow.keepOriginalDimensionsRadioButton.isChecked() else
+              (mainWindow.widthSpinBox.value() * 2,
+               mainWindow.heightSpinBox.value())),
+            Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.
+            SmoothTransformation), useOriginalImage, image
+
         super().start()
 
     def run(self) -> None:
+        image = self.originalImage if self.useOriginalImage else self.image
+
         self.onResultReady.emit("".join(
             (w + "\n") for w in ("".join(
-                self.asciiCharacters[self.image.pixelColor(x, y).value() // 25]
-                for x in range(self.image.width()))
-                                 for y in range(self.image.height()))
-            if w.strip()))
+                self.asciiCharacters[image.pixelColor(x, y).value() // 25]
+                for x in range(image.width()))
+                                 for y in range(image.height())) if w.strip()))
 
 
 class MainWindow(QDialog):
     __slots__ = (
+        "keepOriginalDimensionsRadioButton",
+        "divideByRadioButton",
         "backgroundColor",
+        "divideBySpinBox",
         "foregroundColor",
+        "heightSpinBox",
+        "widthSpinBox",
         "image",
     )
 
@@ -99,18 +127,7 @@ class MainWindow(QDialog):
 
             self.setDisabled(True)
 
-            image = QImage(self.image)
-
-            return processingThread.start(
-                image.scaled(
-                    *((image.width() * 2 // divideBySpinBox.value(),
-                       image.height() // divideBySpinBox.value())
-                      if divideByRadioButton.isChecked() else
-                      (image.width() * 2, image.height())
-                      if keepOriginalDimensionsRadioButton.isChecked() else
-                      (widthSpinBox.value() * 2, heightSpinBox.value())),
-                    Qt.AspectRatioMode.IgnoreAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation))
+            processingThread.start(resultReady, QImage(self.image))
 
         self.image, layout, fileLine = None, QVBoxLayout(self), QLineEdit(
             readOnly=True,
@@ -119,27 +136,26 @@ class MainWindow(QDialog):
         processButton, self.foregroundColor, dimensionsGroupBox = QPushButton(
             "Process", clicked=process,
             enabled=False), QColor(0, 0, 0), QGroupBox("Output dimensions")
-        dimensionsGroupBoxLayout, divideByRadioButton, processingThread = QFormLayout(
-            dimensionsGroupBox), QRadioButton(
-                checked=True), ProcessingThread(resultReady)
-        divideBySpinBox, divideByLayout, keepOriginalDimensionsRadioButton = QSpinBox(
+        dimensionsGroupBoxLayout, self.divideByRadioButton, self.backgroundColor = QFormLayout(
+            dimensionsGroupBox), QRadioButton(checked=True), QColor(
+                255, 255, 255)
+        self.divideBySpinBox, divideByLayout, self.keepOriginalDimensionsRadioButton = QSpinBox(
             minimum=2), QHBoxLayout(), QRadioButton("Keep it all as-is")
-        customDimensionsGroupBox, customDimensionsRadioButton, heightSpinBox = QGroupBox(
+        customDimensionsGroupBox, customDimensionsRadioButton, self.heightSpinBox = QGroupBox(
             "Custom dimensions"), QRadioButton(), QSpinBox(minimum=1,
                                                            maximum=999999999)
-        widthSpinBox, customDimensionsGroupBoxLayout, backgroundColorPicker = QSpinBox(
+        self.widthSpinBox, customDimensionsGroupBoxLayout, backgroundColorPicker = QSpinBox(
             minimum=1,
             maximum=999999999), QFormLayout(customDimensionsGroupBox), QLabel(
                 toolTip="Background color",
                 frameShape=QLabel.Shape.StyledPanel,
                 styleSheet=
                 "QLabel { color: transparent; background-color: #FFFFFF; }")
-        foregroundColorPicker, self.backgroundColor = QLabel(
+        foregroundColorPicker = QLabel(
             toolTip="Text color",
             frameShape=QLabel.Shape.StyledPanel,
             styleSheet=
-            "QLabel { color: transparent; background-color: #000000; }"
-        ), QColor(255, 255, 255)
+            "QLabel { color: transparent; background-color: #000000; }")
 
         fileLine.addAction(
             QAction(app.style().standardIcon(
@@ -153,16 +169,16 @@ class MainWindow(QDialog):
             True), lambda event: changeColor()
         QShortcut(QKeySequence("Ctrl+V"), self, fromClipboard)
 
-        customDimensionsGroupBoxLayout.addRow("Width: ", widthSpinBox)
-        customDimensionsGroupBoxLayout.addRow("Height: ", heightSpinBox)
+        customDimensionsGroupBoxLayout.addRow("Width: ", self.widthSpinBox)
+        customDimensionsGroupBoxLayout.addRow("Height: ", self.heightSpinBox)
 
-        divideByLayout.addWidget(divideByRadioButton)
+        divideByLayout.addWidget(self.divideByRadioButton)
         divideByLayout.addWidget(QLabel("Divide by"))
-        divideByLayout.addWidget(divideBySpinBox)
+        divideByLayout.addWidget(self.divideBySpinBox)
         divideByLayout.addStretch(-1)
 
         dimensionsGroupBoxLayout.addRow(divideByLayout)
-        dimensionsGroupBoxLayout.addRow(keepOriginalDimensionsRadioButton)
+        dimensionsGroupBoxLayout.addRow(self.keepOriginalDimensionsRadioButton)
         dimensionsGroupBoxLayout.addRow(customDimensionsRadioButton,
                                         customDimensionsGroupBox)
 
@@ -176,37 +192,76 @@ class MainWindow(QDialog):
         self.show()
 
 
+def coloredResultReady(result: str, file: str) -> None:
+    pixmap = QPixmap(processingThread.originalImage.size())
+    painter = QPainter(pixmap)
+
+    painter.setFont(generatedArtWindow.font())
+
+    for line, y in zip(result.splitlines(), range(pixmap.height())):
+        for char, x in zip(line, range(pixmap.width())):
+            painter.setPen(processingThread.originalImage.pixelColor(x, y))
+            painter.drawText(x, y, char)
+
+    painter.end()
+
+    if not pixmap.save(file, quality=100):
+        return QMessageBox.critical(generatedArtWindow, "Error",
+                                    f"Could not save to {file}")
+
+    QMessageBox.information(generatedArtWindow, "Success",
+                            f"Successfully saved to {file}")
+
+
 def contextMenuRequested(pos: QPoint) -> None:
     menu = QMenu()
 
     saveAction, toggleVerticalScrollBarAction, toggleHorizontalScrollBarAction = QAction(
-        "Save As",
+        "Save as...",
         shortcut=QKeySequence(QKeySequence.StandardKey.Save)), QAction(
             "Hide or show vertical scroll bar"), QAction(
                 "Hide or show horizontal scroll bar")
+    saveWithOriginalColorsAction = QAction(
+        "Save as an image with original colors")
 
     menu.addAction(saveAction)
     menu.addSeparator()
     menu.addActions(
         [toggleVerticalScrollBarAction, toggleHorizontalScrollBarAction])
+    menu.addSeparator()
+    menu.addAction(saveWithOriginalColorsAction)
 
     action = menu.exec(generatedArtWindow.mapToGlobal(pos))
     if not action: return
 
     if action in {
-            toggleVerticalScrollBarAction, toggleHorizontalScrollBarAction
+            saveAction, toggleVerticalScrollBarAction,
+            toggleHorizontalScrollBarAction
     }:
         return (
-            generatedArtWindow.setVerticalScrollBarPolicy
-            if action == toggleVerticalScrollBarAction else
-            generatedArtWindow.setHorizontalScrollBarPolicy
-        )(Qt.ScrollBarPolicy.ScrollBarAsNeeded if (
-            generatedArtWindow.verticalScrollBarPolicy if action ==
-            toggleVerticalScrollBarAction else generatedArtWindow.
-            horizontalScrollBarPolicy)() == Qt.ScrollBarPolicy.
-          ScrollBarAlwaysOff else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            (generatedArtWindow.setVerticalScrollBarPolicy
+             if action == toggleVerticalScrollBarAction else
+             generatedArtWindow.setHorizontalScrollBarPolicy
+             )(Qt.ScrollBarPolicy.ScrollBarAsNeeded if (
+                 generatedArtWindow.verticalScrollBarPolicy if action ==
+                 toggleVerticalScrollBarAction else generatedArtWindow.
+                 horizontalScrollBarPolicy)() == Qt.ScrollBarPolicy.
+               ScrollBarAlwaysOff else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        ) if action != saveAction else saveGeneratedArt()
 
-    saveGeneratedArt()
+    if QMessageBox.question(
+            generatedArtWindow, "Attention",
+            "<h3>Note</h3>Image may not look that good nor that accurate." +
+            "<h3>Warning</h3>This could possibly be performance/resource heavy and the program might crash, do you want to continue?<br>"
+    ) == QMessageBox.StandardButton.Yes:
+        file = QFileDialog.getSaveFileName(
+            filter=
+            f"Image File ({'; '.join(f'*.{x.data().decode()}' for x in QImageWriter.supportedImageFormats())})"
+        )[0]
+        if not file: return
+
+        processingThread.start(lambda result: coloredResultReady(result, file),
+                               processingThread.originalImage, True)
 
 
 def saveGeneratedArt() -> None:
@@ -260,7 +315,8 @@ def saveGeneratedArt() -> None:
                             f"Successfully saved to {file[0]}")
 
 
-app = QApplication([], applicationName="ASCII Art Generator")
+app, processingThread = QApplication(
+    [], applicationName="ASCII Art Generator"), ProcessingThread()
 
 mainWindow, generatedArtWindow = MainWindow(), QPlainTextEdit(
     windowTitle="Generated ASCII Art",
